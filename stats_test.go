@@ -70,13 +70,13 @@ func TestRace(t *testing.T) {
 	ch2 := make(chan bool)
 
 	go func() {
-		now := time.Now()
+		st := StatItem{time.Now(), "localhost"}
 		for true {
 			select {
 			case _ = <-ch1:
 				return
 			default:
-				s.EndWithStatus(now, 200)
+				s.EndWithStatus(st, 200)
 
 			}
 		}

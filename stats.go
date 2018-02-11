@@ -15,6 +15,7 @@ type Stats struct {
 	Pid                 int
 	ResponseCounts      map[string]int
 	TotalResponseCounts map[string]int
+	TotalVisitorCounts  map[string]int
 	TotalResponseTime   time.Time
 }
 
@@ -25,6 +26,7 @@ func New() *Stats {
 		Pid:                 os.Getpid(),
 		ResponseCounts:      map[string]int{},
 		TotalResponseCounts: map[string]int{},
+		TotalVisitorCounts:  map[string]int{},
 		TotalResponseTime:   time.Time{},
 	}
 
@@ -39,6 +41,12 @@ func New() *Stats {
 	return stats
 }
 
+//StatItem contains the request begin time and the visitor ip address
+type StatItem struct {
+	BeginTime time.Time
+	Visitor   string
+}
+
 // ResetResponseCounts reset the response counts
 func (mw *Stats) ResetResponseCounts() {
 	mw.mu.Lock()
@@ -49,7 +57,7 @@ func (mw *Stats) ResetResponseCounts() {
 // Handler is a MiddlewareFunc makes Stats implement the Middleware interface.
 func (mw *Stats) Handler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		beginning, recorder := mw.Begin(w)
+		beginning, recorder := mw.Begin(w, r)
 
 		h.ServeHTTP(recorder, r)
 
@@ -59,7 +67,7 @@ func (mw *Stats) Handler(h http.Handler) http.Handler {
 
 // Negroni compatible interface
 func (mw *Stats) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	beginning, recorder := mw.Begin(w)
+	beginning, recorder := mw.Begin(w, r)
 
 	next(recorder, r)
 
@@ -67,34 +75,36 @@ func (mw *Stats) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.Han
 }
 
 // Begin starts a recorder
-func (mw *Stats) Begin(w http.ResponseWriter) (time.Time, ResponseWriter) {
-	start := time.Now()
+func (mw *Stats) Begin(w http.ResponseWriter, r *http.Request) (StatItem, ResponseWriter) {
+	st := StatItem{BeginTime: time.Now(), Visitor: r.RemoteAddr}
+	//	start := time.Now()
 
 	writer := NewRecorderResponseWriter(w, 200)
 
-	return start, writer
+	return st, writer
 }
 
 // EndWithStatus closes the recorder with a specific status
-func (mw *Stats) EndWithStatus(start time.Time, status int) {
+func (mw *Stats) EndWithStatus(st StatItem, recorder ResponseWriter) {
 	end := time.Now()
 
-	responseTime := end.Sub(start)
+	responseTime := end.Sub(st.BeginTime)
 
 	mw.mu.Lock()
 
 	defer mw.mu.Unlock()
 
-	statusCode := fmt.Sprintf("%d", status)
+	statusCode := fmt.Sprintf("%d", recorder.Status())
 
 	mw.ResponseCounts[statusCode]++
 	mw.TotalResponseCounts[statusCode]++
+	mw.TotalVisitorCounts[st.Visitor]++
 	mw.TotalResponseTime = mw.TotalResponseTime.Add(responseTime)
 }
 
 // End closes the recorder with the recorder status
-func (mw *Stats) End(start time.Time, recorder ResponseWriter) {
-	mw.EndWithStatus(start, recorder.Status())
+func (mw *Stats) End(st StatItem, recorder ResponseWriter) {
+	mw.EndWithStatus(st, recorder)
 }
 
 // Data serializable structure
@@ -106,6 +116,7 @@ type Data struct {
 	TimeUnix               int64          `json:"unixtime"`
 	StatusCodeCount        map[string]int `json:"status_code_count"`
 	TotalStatusCodeCount   map[string]int `json:"total_status_code_count"`
+	TotalVisitorCount      map[string]int `json:"total_visitor_count"`
 	Count                  int            `json:"count"`
 	TotalCount             int            `json:"total_count"`
 	TotalResponseTime      string         `json:"total_response_time"`
@@ -156,6 +167,7 @@ func (mw *Stats) Data() *Data {
 		TimeUnix:               now.Unix(),
 		StatusCodeCount:        responseCounts,
 		TotalStatusCodeCount:   totalResponseCounts,
+		TotalVisitorCount:      mw.TotalVisitorCounts,
 		Count:                  count,
 		TotalCount:             totalCount,
 		TotalResponseTime:      totalResponseTime.String(),
