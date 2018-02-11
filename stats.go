@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -76,7 +77,11 @@ func (mw *Stats) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.Han
 
 // Begin starts a recorder
 func (mw *Stats) Begin(w http.ResponseWriter, r *http.Request) (StatItem, ResponseWriter) {
-	st := StatItem{BeginTime: time.Now(), Visitor: r.RemoteAddr}
+
+	runes := []rune(r.RemoteAddr)
+	clientIP := runes[:strings.LastIndex(r.RemoteAddr, ":")]
+
+	st := StatItem{BeginTime: time.Now(), Visitor: string(clientIP)}
 	//	start := time.Now()
 
 	writer := NewRecorderResponseWriter(w, 200)
